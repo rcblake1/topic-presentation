@@ -1,4 +1,173 @@
+---
+title: "Variable Selection Metrics"
+author: "Roger Blake"
+format: html
+bibliography: topic_pres_references.bib
+csl: apa.csl
+---
+
 # Variable selection metrics
 This section was prepared by Roger Blake, a junior majoring in statistical data science with a minor in economics. 
 
-## Introduction to variable selection metrics
+## What is variable selection & why is it important?
+
+Variable selection is the process of choosing the optimal combination of variables to fit a model. It is important that you choose enough variables to have a strong model, but not enough that you risk overfitting. It is often difficult to know which variables should be included, especially when the data contains a large number of potential variables.
+
+Questions to consider when selecting variables for a model:
+
+1) What features are the most "important"?
+2) How do we measure "importance"?
+3) How do we find the sweet spot between too few variables (weak model) and too many variables (overfitting)?
+
+There are many ways to measure which variables are important. In this presentation, I'll go over a few methods that I hope will be helpful for everyone. 
+
+1) Forward selection and backward elimination
+2) Random forest feature importance
+3) SHAP values
+
+## Forward selection and backward elimination
+
+Forward selection and backward elimination are two very similar methods used in regression models to help select variables. They are both iterative processes that add/remove variables until the model cannot be improved. To judge model performance, AIC or BIC is usually used.
+
+**Forward selection:**
+
+1) Start with a model with 0 predictors
+2) Test all variables individually, see which one gives the lowest (best) AIC/BIC
+3) Add this variable to the regression model if AIC/BIC is improved
+4) Continue this process until a point is reached where any variable added will make the AIC/BIC score worse. The process is then stopped.
+
+**Backward selection:**
+
+1) Start with a model with all potential predictors included.
+2) Delete the variable whose loss gives the best (lowest) AIC/BIC
+3) Continue this process until a point is reached where any variable removed will make the AIC/BIC score worse. The process is then stopped.
+
+Let's look at some code to understand how this works. I'll be using the Ames housing data:
+```{python}
+import openml
+import pandas as pd
+import statsmodels.api as sm
+from sklearn.linear_model import LinearRegression
+from mlxtend.feature_selection import SequentialFeatureSelector as SFS
+
+dataset = openml.datasets.get_dataset(42165)
+df, *_ = dataset.get_data()
+df = df.dropna(subset=['SalePrice'])
+
+y = df['SalePrice']
+X_raw = df.drop(columns=['SalePrice'])
+
+# One-hot encode categorical variables
+X = pd.get_dummies(X_raw, drop_first=True).astype(float)
+
+# Drop any remaining NaNs
+X = X.dropna()
+y = y.loc[X.index]
+
+lr = LinearRegression()
+
+def aic_score(estimator, X_subset, y_subset):
+    X_sm = sm.add_constant(X_subset)
+    model = sm.OLS(y_subset, X_sm).fit()
+    return -model.aic  # negative because mlxtend maximizes
+
+forward_selector = SFS(
+    lr,
+    k_features=10, # limit features so code runs
+    forward=True,
+    floating=False,
+    scoring=aic_score,
+    cv=5
+)
+forward_selector = forward_selector.fit(X, y)
+
+forward_features = list(forward_selector.k_feature_names_)
+print("Forward Selection chosen features:")
+print(forward_features)
+```
+
+**Pros:**
+
+- simple to understand and code
+- good for identifying very important and clearly useless variables
+
+**Cons:**
+
+- can miss interactions between variables
+- each step only looks at improvement from one variable--often does not lead to the best possible model
+- tricky when both numerical and categorical data are included. One-hot encoding is needed for the categorical data
+- a lot of computing power is needed when number of variables is large. Backward elimination required too much computing power to even run on my computer.
+
+## Random forest feature importance
+
+Please refer to the previous presentation on random forests for a more in-depth explanation of the algorithm. For this presentation, I will simply be talking about how to use the random forest algorithm for help with variable selection. 
+
+Using a method called Mean Decrease in Impurity (MDI), we can quantify how important each variable is in a random forest model.
+
+Steps:
+
+1) Fit a random forest regressor
+2) Compute MDI for each variable
+    - Each time a variable is used to split a node, calculate the reduction in impurity caused by that split
+    - Sum the impurity decreases for each variable across all nodes in that tree
+    - Average the importance for each variable for all the trees 
+
+
+General idea: if a variable is consistently causing significant drops in impurity, it is an important variable to include in your model. 
+
+Let's see this in action with some code. Scikit-learn has a `RandomForestRegressor.feature_importances_` attribute that can calculate the MDI values for each variable for us, making it relatively easy to code.
+
+```{python}
+from sklearn.ensemble import RandomForestRegressor
+import openml
+import pandas as pd
+
+# Load Ames Housing
+dataset = openml.datasets.get_dataset(42165)
+df, *_ = dataset.get_data()
+
+df = df.dropna(subset=['SalePrice'])
+X = pd.get_dummies(df.drop(columns=['SalePrice']), drop_first=True)
+y = df['SalePrice']
+
+rf = RandomForestRegressor(n_estimators=100, random_state=5)
+rf.fit(X, y)
+
+# Get MDI values
+importances = pd.Series(rf.feature_importances_, index=X.columns)
+importances = importances.sort_values(ascending=False)
+
+# Show top 10 features
+print(importances.head(10))
+```
+
+**Pros:**
+
+- All the benefits of random forests are included in ranking variables by MDI score
+    - Captures nonlinear relationships well
+    - Captures interactions between variables well
+- Can easily handle large number of potential variables
+- Handles numerical and categorical variables (through one-hot encoding)
+
+**Cons:**
+
+- Favors variables with many categories
+    - Each additional category is another chance to split and reduce impurity. This can cause inflated MDI values even when the variable has little predictive power.
+- Biased towards variables that possess a category having a high frequency
+- Biased in presence of correlated features
+    - importance of related variables can be split -- `GrLivArea` and `1stFlrSF`, for example.
+
+[@nicodemus2011MDI]
+
+## SHAP values
+
+
+
+
+
+
+
+
+## Use your domain knowledge!
+
+Using your own, or an expert's, domain knowledge can also be crucial in variable selection. It is extremely difficult to gather the exact variables necessary to create the ideal model using just statistics and computer science, and using any domain knowledge available can help this process tremedously. For example, variables like latitude and longitude almost certainly tell us nothing about housing price in a specific city. If our methods are claiming these variables are important, we might need to look at our process again. 
