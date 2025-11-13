@@ -3,7 +3,6 @@ title: "Variable Selection Metrics"
 author: "Roger Blake"
 format: html
 bibliography: topic_pres_references.bib
-csl: apa.csl
 ---
 
 # Variable selection metrics
@@ -22,7 +21,7 @@ Questions to consider when selecting variables for a model:
 There are many ways to measure which variables are important. In this presentation, I'll go over a few methods that I hope will be helpful for everyone. 
 
 1) Forward selection and backward elimination
-2) Random forest feature importance
+2) Random forest feature importance (MDI)
 3) SHAP values
 
 ## Forward selection and backward elimination
@@ -36,7 +35,7 @@ Forward selection and backward elimination are two very similar methods used in 
 3) Add this variable to the regression model if AIC/BIC is improved
 4) Continue this process until a point is reached where any variable added will make the AIC/BIC score worse. The process is then stopped.
 
-**Backward selection:**
+**Backward elimination:**
 
 1) Start with a model with all potential predictors included.
 2) Delete the variable whose loss gives the best (lowest) AIC/BIC
@@ -88,7 +87,7 @@ print(forward_features)
 
 **Pros:**
 
-- simple to understand and code
+- simple to understand
 - good for identifying very important and clearly useless variables
 
 **Cons:**
@@ -137,7 +136,6 @@ rf.fit(X, y)
 importances = pd.Series(rf.feature_importances_, index=X.columns)
 importances = importances.sort_values(ascending=False)
 
-# Show top 10 features
 print(importances.head(10))
 ```
 
@@ -153,16 +151,70 @@ print(importances.head(10))
 
 - Favors variables with many categories
     - Each additional category is another chance to split and reduce impurity. This can cause inflated MDI values even when the variable has little predictive power.
-- Biased towards variables that possess a category having a high frequency
+- Biased towards variables that have a caregory with a high frequency
+    - A split that separates the dominant category often leads to a large drop in impurity
 - Biased in presence of correlated features
-    - importance of related variables can be split -- `GrLivArea` and `1stFlrSF`, for example.
+    - Importance of related variables can be split -- `GrLivArea` and `1stFlrSF`, for example.
+- No exact threshold or cutoff point
 
 [@nicodemus2011MDI]
 
 ## SHAP values
 
+SHAP values are an application of game theory that has found a role in data science. They measure how much each feature contributes to a model's prediction, on average, across all observations. Predictors with higher SHAP values contribute more to the model's predictions. In general, SHAP values can be used to "look inside" the black box models and provide some explanation as to how the model is making decisions and which features it is putting more weight on.
+
+[@molnar2025]
+
+For our purposes, we will use SHAP values for variable selection. I decided to use a random forest so we can compare the results to the results from the MDI method.
+
+Steps:
+
+1) Compute the SHAP value for each variable at every data point
+2) Take the average of the absolute value of the SHAP value for each variable
+3) Variables with a higher average SHAP value are more important to the model.
+
+```{python}
+import openml
+import pandas as pd
+from sklearn.ensemble import RandomForestRegressor
+import shap
+
+dataset = openml.datasets.get_dataset(42165)
+df, *_ = dataset.get_data()
+
+df = df.dropna(subset=['SalePrice'])
+y = df['SalePrice']
+X = pd.get_dummies(df.drop(columns=['SalePrice']), drop_first=True)
+
+rf = RandomForestRegressor(n_estimators=100, random_state=5)
+rf.fit(X, y)
+
+# find SHAP values
+explainer = shap.TreeExplainer(rf)
+shap_values = explainer.shap_values(X)
+
+# find average of abs of SHAP values for each variable
+shap_importance = pd.DataFrame({
+    'feature': X.columns,
+    'importance': abs(shap_values).mean(axis=0)
+}).sort_values(by='importance', ascending=False)
+
+print(shap_importance.head(10))
+```
 
 
+**Pros:**
+
+- can be used for any model-- not just restricted to random forest
+- handles variable interaction well
+- tells you direction and magnitude, not just how important
+
+**Cons:**
+
+- no exact threshold
+- splits importance between correlated variables
+    - handles this better than MDI, however
+- although it can be used for any model, non-tree based models have slow computational times
 
 
 
@@ -171,3 +223,5 @@ print(importances.head(10))
 ## Use your domain knowledge!
 
 Using your own, or an expert's, domain knowledge can also be crucial in variable selection. It is extremely difficult to gather the exact variables necessary to create the ideal model using just statistics and computer science, and using any domain knowledge available can help this process tremedously. For example, variables like latitude and longitude almost certainly tell us nothing about housing price in a specific city. If our methods are claiming these variables are important, we might need to look at our process again. 
+
+## references
