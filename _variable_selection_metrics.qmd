@@ -1,0 +1,4 @@
+# Variable selection metrics
+This section was prepared by Roger Blake, a junior majoring in statistical data science with a minor in economics. 
+
+## Introduction to variable selection metrics
