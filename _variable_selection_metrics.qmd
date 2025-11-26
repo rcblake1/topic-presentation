@@ -5,101 +5,27 @@ format: html
 bibliography: topic_pres_references.bib
 ---
 
-# Variable selection metrics
+# Variable importance metrics
 This section was prepared by Roger Blake, a junior majoring in statistical data science with a minor in economics. 
 
-## What is variable selection & why is it important?
+## What is variable importance & why is it important?
 
-Variable selection is the process of choosing the optimal combination of variables to fit a model. It is important that you choose enough variables to have a strong model, but not enough that you risk overfitting. It is often difficult to know which variables should be included, especially when the data contains a large number of potential variables.
+Variable importance is a way to measure how useful a variable is in predicting the target. This can be useful for both creating and analyzing models. Real world data often contains many potential predictors, and it can be difficult to know which variables should be considered important; variable importance metrics can help solve this problem.
 
-Questions to consider when selecting variables for a model:
+Questions to consider when analyzing variable importance:
 
 1) What features are the most "important"?
 2) How do we measure "importance"?
-3) How do we find the sweet spot between too few variables (weak model) and too many variables (overfitting)?
+3) How can this help us create the most accurate model possible?
 
-There are many ways to measure which variables are important. In this presentation, I'll go over a few methods that I hope will be helpful for everyone. 
+There are many ways to measure which variables are important. In this presentation, I'll go over 2 methods that I hope will be helpful for everyone:
 
-1) Forward selection and backward elimination
-2) Random forest feature importance (MDI)
-3) SHAP values
-
-## Forward selection and backward elimination
-
-Forward selection and backward elimination are two very similar methods used in regression models to help select variables. They are both iterative processes that add/remove variables until the model cannot be improved. To judge model performance, AIC or BIC is usually used.
-
-**Forward selection:**
-
-1) Start with a model with 0 predictors
-2) Test all variables individually, see which one gives the lowest (best) AIC/BIC
-3) Add this variable to the regression model if AIC/BIC is improved
-4) Continue this process until a point is reached where any variable added will make the AIC/BIC score worse. The process is then stopped.
-
-**Backward elimination:**
-
-1) Start with a model with all potential predictors included.
-2) Delete the variable whose loss gives the best (lowest) AIC/BIC
-3) Continue this process until a point is reached where any variable removed will make the AIC/BIC score worse. The process is then stopped.
-
-Let's look at some code to understand how this works. I'll be using the Ames housing data:
-```{python}
-import openml
-import pandas as pd
-import statsmodels.api as sm
-from sklearn.linear_model import LinearRegression
-from mlxtend.feature_selection import SequentialFeatureSelector as SFS
-
-dataset = openml.datasets.get_dataset(42165)
-df, *_ = dataset.get_data()
-df = df.dropna(subset=['SalePrice'])
-
-y = df['SalePrice']
-X_raw = df.drop(columns=['SalePrice'])
-
-# One-hot encode categorical variables
-X = pd.get_dummies(X_raw, drop_first=True).astype(float)
-
-# Drop any remaining NaNs
-X = X.dropna()
-y = y.loc[X.index]
-
-lr = LinearRegression()
-
-def aic_score(estimator, X_subset, y_subset):
-    X_sm = sm.add_constant(X_subset)
-    model = sm.OLS(y_subset, X_sm).fit()
-    return -model.aic  # negative because mlxtend maximizes
-
-forward_selector = SFS(
-    lr,
-    k_features=10, # limit features so code runs
-    forward=True,
-    floating=False,
-    scoring=aic_score,
-    cv=5
-)
-forward_selector = forward_selector.fit(X, y)
-
-forward_features = list(forward_selector.k_feature_names_)
-print("Forward Selection chosen features:")
-print(forward_features)
-```
-
-**Pros:**
-
-- simple to understand
-- good for identifying very important and clearly useless variables
-
-**Cons:**
-
-- can miss interactions between variables
-- each step only looks at improvement from one variable--often does not lead to the best possible model
-- tricky when both numerical and categorical data are included. One-hot encoding is needed for the categorical data
-- a lot of computing power is needed when number of variables is large. Backward elimination required too much computing power to even run on my computer.
+1) Random forest feature importance (MDI)
+2) SHAP values
 
 ## Random forest feature importance
 
-Please refer to the previous presentation on random forests for a more in-depth explanation of the algorithm. For this presentation, I will simply be talking about how to use the random forest algorithm for help with variable selection. 
+Please refer to the previous presentation on random forests for a more in-depth explanation of the algorithm. For this presentation, I will simply be talking about how to use the random forest algorithm for help with variable importance. 
 
 Using a method called Mean Decrease in Impurity (MDI), we can quantify how important each variable is in a random forest model.
 
@@ -165,7 +91,7 @@ SHAP values are an application of game theory that has found a role in data scie
 
 [@molnar2025]
 
-For our purposes, we will use SHAP values for variable selection. I decided to use a random forest so we can compare the results to the results from the MDI method.
+For our purposes, we will use SHAP values for variable importance. I decided to use a random forest so we can compare the results to the results from the MDI method.
 
 Steps:
 
@@ -205,16 +131,16 @@ print(shap_importance.head(10))
 
 **Pros:**
 
-- can be used for any model-- not just restricted to random forest
-- handles variable interaction well
-- tells you direction and magnitude, not just how important
+- Can be used for any model-- not just restricted to random forest
+- Handles variable interaction well
+- Tells you direction and magnitude, not just how important
 
 **Cons:**
 
-- no exact threshold
-- splits importance between correlated variables
+- No exact threshold
+- Splits importance between correlated variables
     - handles this better than MDI, however
-- although it can be used for any model, non-tree based models have slow computational times
+- Although it can be used for any model, non-tree based models have slow computational times
 
 
 
@@ -222,6 +148,6 @@ print(shap_importance.head(10))
 
 ## Use your domain knowledge!
 
-Using your own, or an expert's, domain knowledge can also be crucial in variable selection. It is extremely difficult to gather the exact variables necessary to create the ideal model using just statistics and computer science, and using any domain knowledge available can help this process tremedously. For example, variables like latitude and longitude almost certainly tell us nothing about housing price in a specific city. If our methods are claiming these variables are important, we might need to look at our process again. 
+Using your own, or an expert's, domain knowledge can also be crucial in analyzing variable importance. It is extremely difficult to gather the exact variables necessary to create the ideal model using just statistics and computer science, and using any domain knowledge available can help this process tremedously. For example, variables like latitude and longitude almost certainly tell us nothing about housing price in a specific city. If our methods are claiming these variables are important, we might need to look at our process again. 
 
 ## references
